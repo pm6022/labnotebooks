@@ -1,0 +1,81 @@
+units real
+dimension 3
+
+# Variabili termodinamiche di input
+# Temperatura:
+variable T equal 298
+# Numero di particelle:
+variable N equal 1000
+# Volume:
+variable L equal 300
+variable V equal $L^3
+
+# Parametri fisico-chimici
+# Raggio:
+variable sigma equal 3.7
+# Massa:
+variable m equal 44
+
+# Minimo di energia:
+variable eps equal 0.5
+# Distanza di cutoff:
+variable cut equal 2.5*${sigma}
+
+
+# Calcolo della densità
+# variable rho equal $((v_N*v_m/((6.022*10^(23))*v_V))
+
+# Scatola di simulazione
+lattice fcc  24
+region simbox block 0 $((1/ 24)*v_L) 0 $((1/ 24)*v_L) 0 $((1/ 24)*v_L)
+create_box 1 simbox
+
+# Posizioni e velocità iniziali delle particelle
+create_atoms 1 random $N 7 simbox 
+mass 1 $m
+velocity all create ${T} 87287
+
+# Potenziale di interazione
+pair_style lj/cut ${cut}
+pair_coeff 1 1 ${eps} ${sigma} ${cut}
+
+# Timestep e tempo in unità reali
+variable	dt	equal 1
+timestep 	${dt}
+variable	step	equal	step
+variable	time	equal step*${dt}
+
+# Variabili di output
+variable        PE      equal   pe
+variable        KE      equal   ke
+variable        VOL     equal   vol
+variable        PRESS   equal   press
+variable        TEMP    equal   temp
+variable	E	equal	ke-pe
+
+fix nvt all nvt temp $T $T 1
+neigh_modify every 1 delay 0 check yes
+
+# Equilibrazione
+fix Thermodynamic_equilibration  all  print 1000  "${time} ${PE} ${KE} ${E} ${TEMP} ${PRESS} ${VOL}"  file thermodynamics_equilibration_${L}.dat
+
+run 10000000
+unfix Thermodynamic_equilibration
+
+# Produzione
+thermo 0
+reset_timestep 0
+
+compute         MOMENTS all msd/nongauss
+variable        MSD equal c_MOMENTS[1]
+
+fix MSD all print 100 "${time} ${MSD}" file msd_${L}.dat
+fix Thermodynamic  all  print 1000  "${time} ${PE} ${KE} ${E} ${TEMP} ${PRESS} ${VOL}"  file thermodynamics_${L}.dat
+dump trajectories all custom 100000 dump_${L}.lammpstrj id type x y z vx vy vz
+run 20000000
+
+unfix nvt
+uncompute MOMENTS
+unfix MSD
+unfix Thermodynamic
+undump trajectories
